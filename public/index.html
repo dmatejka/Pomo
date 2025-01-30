@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pomodoro App</title>
+    <link rel="manifest" href="/manifest.json">
+    <link rel="icon" href="https://via.placeholder.com/32"> <!-- Placeholder favicon -->
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f5f5f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        .container {
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            max-width: 400px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        #timer {
+            font-size: 4em;
+            color: #333;
+            margin: 20px 0;
+        }
+
+        button {
+            background-color: #007bff;
+            color: #fff;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            margin: 3px;
+            font-size: 0.9em;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        input[type="number"] {
+            padding: 5px;
+            width: 60px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            margin-right: 10px;
+            text-align: center;
+        }
+
+        select {
+            padding: 5px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+
+        .buttons-container {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        
+        .time-input {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-top: 10px;
+        }
+
+        .time-input label {
+            margin-right: 5px;
+        }
+
+        #installButton {
+            display: block;
+            margin: 20px auto;
+        }
+
+        #controlButtons {
+            margin-top: 10px;
+        }
+
+        #resetButton {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Pomodoro Timer</h1>
+        <div id="timer">00:00:00</div>
+        <div class="buttons-container">
+            <button onclick="startTimer(7200)">2h</button>
+            <button onclick="startTimer(3600)">1h</button>
+            <button onclick="startTimer(1800)">30min</button>
+            <button onclick="startTimer(900)">15min</button>
+        </div>
+        <div class="time-input">
+            <label for="hours">Custom:</label>
+            <input type="number" id="hours" min="0" placeholder="Hrs" style="width: 50px;">
+            <input type="number" id="minutes" min="0" placeholder="Mins" style="width: 50px;">
+            <input type="number" id="seconds" min="0" placeholder="Secs" style="width: 50px;">
+        </div>
+        <div id="controlButtons">
+            <button id="startPauseButton" onclick="startOrToggleTimer()">Start</button>
+            <button id="resetButton" onclick="resetTimer()">Reset</button>
+        </div>
+        <br>
+        <label for="alertSound">Choose Alert Sound:</label>
+        <select id="alertSound">
+            <option value="sound1">Sound 1</option>
+            <option value="sound2">Sound 2</option>
+            <option value="sound3">Sound 3</option>
+        </select>
+        <audio id="alarm" src="" style="display:none;"></audio>
+
+        <button id="installButton" onclick="deferredPrompt.prompt(); deferredPrompt = null;">Install App</button>
+
+        <script>
+            let timerInterval;
+            let timeLeft;
+            let alarmAudio = document.getElementById('alarm');
+            let deferredPrompt;
+            let isInstalled = false;
+            let isRunning = false;
+            let startPauseButton = document.getElementById('startPauseButton');
+            let resetButton = document.getElementById('resetButton');
+            let initialTime;
+
+            function startTimer(seconds) {
+                initialTime = seconds; // Store initial time for reset functionality
+                timeLeft = seconds;
+                clearInterval(timerInterval);
+                updateTimerDisplay();
+                if ('serviceWorker' in navigator && 'SyncManager' in window) {
+                    navigator.serviceWorker.ready.then(function(registration) {
+                        registration.sync.register('timerUpdate').then(function() {
+                            console.log('Background sync registered');
+                        }).catch(function(err) {
+                            console.error('Error registering sync:', err);
+                        });
+                    });
+                }
+                startPauseButton.textContent = 'Pause';
+                isRunning = true;
+                showControlButtons();
+                timerInterval = setInterval(updateTimer, 1000);
+            }
+
+            function startCustomTimer() {
+                const hours = parseInt(document.getElementById('hours').value, 10) || 0;
+                const minutes = parseInt(document.getElementById('minutes').value, 10) || 0;
+                const seconds = parseInt(document.getElementById('seconds').value, 10) || 0;
+                const totalSeconds = (hours * 3600) + (minutes * 60) + seconds;
+
+                if (totalSeconds > 0) {
+                    startTimer(totalSeconds);
+                } else if (initialTime) {
+                    startTimer(initialTime); // Start with the latest start value if custom input is empty
+                } else {
+                    alert("Please enter a valid number of hours, minutes, or seconds.");
+                }
+            }
+
+            function updateTimer() {
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    playAlertSoundAndNotify();
+                    return;
+                }
+                timeLeft--;
+                updateTimerDisplay();
+            }
+
+            function updateTimerDisplay() {
+                const hours = Math.floor(timeLeft / 3600);
+                const minutes = Math.floor((timeLeft % 3600) / 60);
+                const seconds = timeLeft % 60;
+                document.getElementById('timer').textContent = 
+                    `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+            }
+
+            function playAlertSoundAndNotify() {
+                const selectedSound = document.getElementById('alertSound').value;
+                let soundSrc = '';
+                switch(selectedSound) {
+                    case 'sound1': soundSrc = 'sound1.mp3'; break;
+                    case 'sound2': soundSrc = 'sound2.mp3'; break;
+                    case 'sound3': soundSrc = 'sound3.mp3'; break;
+                }
+                alarmAudio.src = soundSrc;
+                alarmAudio.play();
+
+                // Show notification
+                if (Notification.permission === 'granted') {
+                    showNotification();
+                } else if (Notification.permission !== 'denied') {
+                    Notification.requestPermission().then(permission => {
+                        if (permission === 'granted') {
+                            showNotification();
+                        }
+                    });
+                }
+            }
+
+            function showNotification() {
+                const notification = new Notification('Pomodoro Timer', {
+                    body: 'Time is up!',
+                    icon: '/icon-256x256.png'
+                });
+
+                notification.onclick = () => {
+                    window.focus();
+                    alarmAudio.pause();
+                    alarmAudio.currentTime = 0;
+                };
+            }
+
+            function toggleTimer() {
+                if (isRunning) {
+                    if (startPauseButton.textContent === 'Pause') {
+                        clearInterval(timerInterval);
+                        startPauseButton.textContent = 'Resume';
+                    } else {
+                        timerInterval = setInterval(updateTimer, 1000);
+                        startPauseButton.textContent = 'Pause';
+                    }
+                }
+            }
+
+            function startOrToggleTimer() {
+                if (!isRunning) {
+                    startCustomTimer();
+                } else {
+                    toggleTimer();
+                }
+            }
+
+            function resetTimer() {
+                clearInterval(timerInterval);
+                startPauseButton.textContent = 'Start';
+                startPauseButton.disabled = false;
+                resetButton.style.display = 'none';
+                isRunning = false;
+                timeLeft = initialTime; // Reset to initial time
+                updateTimerDisplay();
+            }
+
+            function showControlButtons() {
+                resetButton.style.display = 'inline-block';
+            }
+
+            // PWA and local storage setup
+            if ('serviceWorker' in navigator) {
+                window.addEventListener('load', () => {
+                    navigator.serviceWorker.register('/service-worker.js')
+                        .then(registration => console.log('Service Worker registered:', registration))
+                        .catch(error => console.error('Service Worker registration failed:', error));
+                });
+            }
+
+            window.onload = () => {
+                const savedTime = localStorage.getItem('pomodoroTime');
+                if (savedTime) {
+                    timeLeft = parseInt(savedTime, 10);
+                    updateTimerDisplay();
+                }
+
+                // Check if the app is already installed
+                if (localStorage.getItem('isInstalled') === 'true') {
+                    isInstalled = true;
+                    document.getElementById('installButton').style.display = 'none';
+                }
+            };
+
+            window.onbeforeunload = () => {
+                if (timeLeft !== undefined) {
+                    localStorage.setItem('pomodoroTime', timeLeft);
+                }
+            };
+
+            // Install prompt handling
+            window.addEventListener('beforeinstallprompt', (e) => {
+                e.preventDefault();
+                deferredPrompt = e;
+                if (!isInstalled) {
+                    showInstallPromotion();
+                }
+            });
+
+            function showInstallPromotion() {
+                const installButton = document.getElementById('installButton');
+                installButton.style.display = 'block';
+            }
+
+            window.addEventListener('appinstalled', (evt) => {
+                console.log('a2hs', evt);
+                isInstalled = true;
+                localStorage.setItem('isInstalled', 'true');
+                const installButton = document.getElementById('installButton');
+                installButton.style.display = 'none';
+            });
+        </script>
+    </div>
+
+    <!-- Service Worker -->
+    <script>
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/service-worker.js').then(function(registration) {
+            console.log('Service Worker registered with scope:', registration.scope);
+        }).catch(function(error) {
+            console.log('Service Worker registration failed:', error);
+        });
+    }
+    </script>
+
+</html>
