@@ -54,6 +54,11 @@
             background-color: #0056b3;
         }
 
+        button.disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
         input[type="number"] {
             padding: 5px;
             width: 60px;
@@ -112,10 +117,10 @@
             <button onclick="startTimer(900)">15min</button>
         </div>
         <div class="time-input">
-            <label for="hours">Custom:</label>
             <input type="number" id="hours" min="0" placeholder="Hrs" style="width: 50px;">
             <input type="number" id="minutes" min="0" placeholder="Mins" style="width: 50px;">
             <input type="number" id="seconds" min="0" placeholder="Secs" style="width: 50px;">
+            <button id="setStartButton" class="disabled" onclick="setAndStartCustomTimer()">Custom</button>
         </div>
         <div id="controlButtons">
             <button id="startPauseButton" onclick="startOrToggleTimer()">Start</button>
@@ -142,6 +147,7 @@
             let startPauseButton = document.getElementById('startPauseButton');
             let resetButton = document.getElementById('resetButton');
             let initialTime;
+            let setStartButton = document.getElementById('setStartButton');
 
             function startTimer(seconds) {
                 initialTime = seconds; // Store initial time for reset functionality
@@ -163,7 +169,7 @@
                 timerInterval = setInterval(updateTimer, 1000);
             }
 
-            function startCustomTimer() {
+            function setAndStartCustomTimer() {
                 const hours = parseInt(document.getElementById('hours').value, 10) || 0;
                 const minutes = parseInt(document.getElementById('minutes').value, 10) || 0;
                 const seconds = parseInt(document.getElementById('seconds').value, 10) || 0;
@@ -246,7 +252,11 @@
 
             function startOrToggleTimer() {
                 if (!isRunning) {
-                    startCustomTimer();
+                    if (timeLeft > 0) {
+                        startTimer(timeLeft);
+                    } else {
+                        setAndStartCustomTimer(); // Use the same logic as the Set & Start button
+                    }
                 } else {
                     toggleTimer();
                 }
@@ -264,6 +274,24 @@
 
             function showControlButtons() {
                 resetButton.style.display = 'inline-block';
+            }
+
+            function updateSetStartButtonText() {
+                const hours = parseInt(document.getElementById('hours').value, 10) || 0;
+                const minutes = parseInt(document.getElementById('minutes').value, 10) || 0;
+                const seconds = parseInt(document.getElementById('seconds').value, 10) || 0;
+                const totalSeconds = (hours * 3600) + (minutes * 60) + seconds;
+
+                if (totalSeconds > 0) {
+                    const formattedTime = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+                    setStartButton.textContent = formattedTime;
+                    setStartButton.classList.remove('disabled');
+                    setStartButton.disabled = false;
+                } else {
+                    setStartButton.textContent = 'Custom';
+                    setStartButton.classList.add('disabled');
+                    setStartButton.disabled = true;
+                }
             }
 
             // PWA and local storage setup
@@ -287,6 +315,9 @@
                     isInstalled = true;
                     document.getElementById('installButton').style.display = 'none';
                 }
+
+                // Update Set & Start button text on page load
+                updateSetStartButtonText();
             };
 
             window.onbeforeunload = () => {
@@ -316,6 +347,11 @@
                 const installButton = document.getElementById('installButton');
                 installButton.style.display = 'none';
             });
+
+            // Add event listeners to update button text when inputs change
+            document.getElementById('hours').addEventListener('input', updateSetStartButtonText);
+            document.getElementById('minutes').addEventListener('input', updateSetStartButtonText);
+            document.getElementById('seconds').addEventListener('input', updateSetStartButtonText);
         </script>
     </div>
 
@@ -327,6 +363,60 @@
         }).catch(function(error) {
             console.log('Service Worker registration failed:', error);
         });
+    }
+
+    // Service Worker Script
+    self.addEventListener('install', function(event) {
+        event.waitUntil(
+            caches.open('pomodoro-cache-v1').then(function(cache) {
+                return cache.addAll([
+                    '/',
+                    '/index.html',
+                    '/styles.css',
+                    '/app.js',
+                    '/sound1.mp3',
+                    '/sound2.mp3',
+                    '/sound3.mp3',
+                    '/icon-256x256.png',
+                    '/icon-512x512.png'
+                ]);
+            })
+        );
+    });
+
+    self.addEventListener('fetch', function(event) {
+        event.respondWith(
+            caches.match(event.request).then(function(response) {
+                return response || fetch(event.request);
+            })
+        );
+    });
+
+    self.addEventListener('activate', function(event) {
+        var cacheWhitelist = ['pomodoro-cache-v1'];
+        event.waitUntil(
+            caches.keys().then(function(cacheNames) {
+                return Promise.all(
+                    cacheNames.map(function(cacheName) {
+                        if (cacheWhitelist.indexOf(cacheName) === -1) {
+                            return caches.delete(cacheName);
+                        }
+                    })
+                );
+            })
+        );
+    });
+
+    self.addEventListener('sync', function(event) {
+        if (event.tag === 'timerUpdate') {
+            event.waitUntil(timerSync());
+        }
+    });
+
+    function timerSync() {
+        // Simulate background task for timer
+        console.log('Running background timer sync...');
+        // You can add additional logic here to manage timers in background
     }
     </script>
 
